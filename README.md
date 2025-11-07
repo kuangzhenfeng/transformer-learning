@@ -60,24 +60,34 @@
 .
 ├── src/                 # 源代码目录
 │   ├── __init__.py      # 包初始化文件
-│   └── tensor.py        # 核心张量实现 (阶段1完成)
+│   └── tensor.py        # 核心张量实现 (阶段1任务1)
 ├── tests/               # 测试代码目录
 │   └── test_tensor.py   # 张量单元测试
 ├── docs/                # 文档目录
 │   └── development.md   # 开发文档
 ├── examples/            # 示例代码目录
-│   └── tensor_example.py# 张量使用示例
+│   ├── tensor_example.py# 张量使用示例
+│   └── linear_regression.py # 线性回归训练示例 (阶段1任务2)
 ├── requirements.txt     # 依赖包列表
 └── README.md            # 项目说明文件
 ```
 
 ## 阶段1完成情况
 
+### 任务1：微型自动微分库 (micrograd) ✅
 已完成自动微分张量库的实现：
 - 基本数学运算：加法、乘法、幂运算、除法
 - 常用数学函数：sigmoid、sin、log
 - 自动微分系统
 - 计算图构建与反向传播
+- 支持广播操作的梯度计算
+
+### 任务2：线性回归模型训练 ✅
+已完成使用 micrograd 训练线性回归模型：
+- 实现线性模型 y = w * x + b
+- 实现均方误差 (MSE) 损失函数
+- 实现梯度下降优化算法
+- 成功训练并验证模型收敛性
 
 ## 安装依赖
 
@@ -99,6 +109,8 @@ python -m unittest discover tests/
 
 ## 使用示例
 
+### 基础自动微分示例
+
 ```python
 from src.tensor import Tensor
 
@@ -118,3 +130,17 @@ e.backward()
 print(f"Gradient of a: {a.grad}")
 print(f"Gradient of b: {b.grad}")
 ```
+
+### 线性回归训练示例
+
+```bash
+# 运行线性回归训练示例
+python examples/linear_regression.py
+```
+
+该示例展示了如何：
+- 生成训练数据
+- 定义线性模型 y = w * x + b
+- 使用均方误差损失函数
+- 通过梯度下降优化参数
+- 评估模型性能

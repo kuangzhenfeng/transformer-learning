@@ -1,8 +1,9 @@
 import numpy as np
 
+
 class Tensor:
     """支持自动微分的张量类"""
-    
+
     def __init__(self, data, requires_grad=False, _children=(), _op=''):
         self.data = np.array(data, dtype=np.float32)
         self.grad = np.zeros_like(self.data)
@@ -10,28 +11,56 @@ class Tensor:
         self._prev = set(_children)
         self._op = _op
         self.requires_grad = requires_grad or any(child.requires_grad for child in _children)
+
+    @staticmethod
+    def _unbroadcast(grad, shape):
+        """
+        处理广播后的梯度，将其还原到原始形状
+
+        Args:
+            grad: 广播后的梯度
+            shape: 原始张量的形状
+
+        Returns:
+            还原后的梯度
+        """
+        # 如果形状已经匹配，直接返回
+        if grad.shape == shape:
+            return grad
+
+        # 计算需要求和的维度
+        ndims_added = len(grad.shape) - len(shape)
+        for i in range(ndims_added):
+            grad = grad.sum(axis=0)
+
+        # 对于被广播的维度（大小为1的维度），需要沿该维度求和
+        for i, (grad_dim, shape_dim) in enumerate(zip(grad.shape, shape)):
+            if shape_dim == 1 and grad_dim > 1:
+                grad = grad.sum(axis=i, keepdims=True)
+
+        return grad
         
     def __add__(self, other):
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data + other.data, _children=(self, other), _op='+')
-        
+
         def _backward():
             if self.requires_grad:
-                self.grad += out.grad
+                self.grad += Tensor._unbroadcast(out.grad, self.data.shape)
             if other.requires_grad:
-                other.grad += out.grad
+                other.grad += Tensor._unbroadcast(out.grad, other.data.shape)
         out._backward = _backward
         return out
     
     def __mul__(self, other):
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data * other.data, _children=(self, other), _op='*')
-        
+
         def _backward():
             if self.requires_grad:
-                self.grad += other.data * out.grad
+                self.grad += Tensor._unbroadcast(other.data * out.grad, self.data.shape)
             if other.requires_grad:
-                other.grad += self.data * out.grad
+                other.grad += Tensor._unbroadcast(self.data * out.grad, other.data.shape)
         out._backward = _backward
         return out
     
@@ -49,12 +78,12 @@ class Tensor:
     def __truediv__(self, other):
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data / other.data, _children=(self, other), _op='/')
-        
+
         def _backward():
             if self.requires_grad:
-                self.grad += (1 / other.data) * out.grad
+                self.grad += Tensor._unbroadcast((1 / other.data) * out.grad, self.data.shape)
             if other.requires_grad:
-                other.grad += (-self.data / (other.data ** 2)) * out.grad
+                other.grad += Tensor._unbroadcast((-self.data / (other.data ** 2)) * out.grad, other.data.shape)
         out._backward = _backward
         return out
     
