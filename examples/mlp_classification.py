@@ -213,6 +213,35 @@ def train_spiral():
     accuracy = np.mean(predictions == y)
     
     print(f"\n最终准确率: {accuracy:.4f}")
+
+    def visualize(model: Sequential, X: np.ndarray, y: np.ndarray):
+        import matplotlib.pyplot as plt
+        
+        # 创建网格点用于绘制决策边界
+        h = 0.01
+        x_min, x_max = X[:, 0].min() - 0.5, X[:, 0].max() + 0.5
+        y_min, y_max = X[:, 1].min() - 0.5, X[:, 1].max() + 0.5
+        xx, yy = np.meshgrid(np.arange(x_min, x_max, h),
+                             np.arange(y_min, y_max, h))
+        
+        # 预测网格点
+        grid_points = np.c_[xx.ravel(), yy.ravel()]
+        grid_tensor = Tensor(grid_points, requires_grad=False)
+        grid_logits = model(grid_tensor)
+        grid_predictions = np.argmax(grid_logits.data, axis=1)
+        grid_predictions = grid_predictions.reshape(xx.shape)
+        
+        # 绘制决策边界和数据点
+        plt.figure(figsize=(10, 8))
+        plt.contourf(xx, yy, grid_predictions, alpha=0.3, cmap=plt.cm.viridis)
+        scatter = plt.scatter(X[:, 0], X[:, 1], c=y, cmap=plt.cm.viridis)
+        plt.colorbar(scatter)
+        plt.title(f"Spiral Classification Results (Accuracy: {accuracy:.4f})")
+        plt.xlabel("Feature 1")
+        plt.ylabel("Feature 2")
+        plt.show()
+
+    visualize(model, X, y)
     
     return model
 
