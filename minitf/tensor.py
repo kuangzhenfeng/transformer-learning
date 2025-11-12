@@ -116,14 +116,127 @@ class Tensor:
         out._backward = _backward
         return out
     
-    def sum(self):
-        out = Tensor(np.sum(self.data), _children=(self,), _op='sum')
-        
+    def sum(self, axis=None, keepdims=False):
+        """
+        对张量进行求和
+
+        Args:
+            axis: 求和的轴，None表示对所有元素求和
+            keepdims: 是否保持维度
+        """
+        out = Tensor(np.sum(self.data, axis=axis, keepdims=keepdims), _children=(self,), _op='sum')
+
         def _backward():
             if self.requires_grad:
-                self.grad += np.ones_like(self.data) * out.grad
+                if axis is None:
+                    # 对所有元素求和，梯度广播到所有位置
+                    self.grad += np.ones_like(self.data) * out.grad
+                else:
+                    # 对特定轴求和，需要扩展梯度维度
+                    grad_shape = list(self.data.shape)
+                    if not keepdims:
+                        # 如果没有保持维度，需要在求和的轴上添加维度
+                        if isinstance(axis, int):
+                            axes = [axis]
+                        else:
+                            axes = list(axis)
+                        for ax in sorted(axes):
+                            grad_shape[ax] = 1
+                        expanded_grad = out.grad.reshape(grad_shape)
+                    else:
+                        expanded_grad = out.grad
+                    self.grad += np.broadcast_to(expanded_grad, self.data.shape)
         out._backward = _backward
         return out
+
+    def relu(self):
+        """ReLU 激活函数: max(0, x)"""
+        out = Tensor(np.maximum(0, self.data), _children=(self,), _op='relu')
+
+        def _backward():
+            if self.requires_grad:
+                self.grad += (self.data > 0).astype(np.float32) * out.grad
+        out._backward = _backward
+        return out
+
+    def exp(self):
+        """
+        指数函数
+        x.exp() = e^x
+        """
+        out = Tensor(np.exp(self.data), _children=(self,), _op='exp')
+
+        def _backward():
+            if self.requires_grad:
+                self.grad += np.exp(self.data) * out.grad
+        out._backward = _backward
+        return out
+
+    def max(self, axis=None, keepdims=False):
+        """
+        求最大值
+
+        Args:
+            axis: 求最大值的轴，None表示对所有元素求最大值
+            keepdims: 是否保持维度
+        """
+        out = Tensor(np.max(self.data, axis=axis, keepdims=keepdims), _children=(self,), _op='max')
+
+        def _backward():
+            if self.requires_grad:
+                if axis is None:
+                    # 对所有元素求最大值
+                    mask = (self.data == out.data).astype(np.float32)
+                    self.grad += mask * out.grad / np.sum(mask)
+                else:
+                    # 对特定轴求最大值
+                    if not keepdims:
+                        # 扩展维度以匹配原始形状
+                        if isinstance(axis, int):
+                            expanded_out = np.expand_dims(out.data, axis=axis)
+                            expanded_grad = np.expand_dims(out.grad, axis=axis)
+                        else:
+                            expanded_out = out.data
+                            expanded_grad = out.grad
+                            for ax in sorted(axis):
+                                expanded_out = np.expand_dims(expanded_out, axis=ax)
+                                expanded_grad = np.expand_dims(expanded_grad, axis=ax)
+                    else:
+                        expanded_out = out.data
+                        expanded_grad = out.grad
+
+                    mask = (self.data == expanded_out).astype(np.float32)
+                    # 处理多个最大值的情况
+                    mask_sum = np.sum(mask, axis=axis, keepdims=True)
+                    self.grad += mask * expanded_grad / mask_sum
+        out._backward = _backward
+        return out
+
+    def matmul(self, other):
+        """
+        矩阵乘法
+
+        Args:
+            other: 另一个张量
+        """
+        other = other if isinstance(other, Tensor) else Tensor(other)
+        out = Tensor(np.matmul(self.data, other.data), _children=(self, other), _op='@')
+
+        def _backward():
+            if self.requires_grad:
+                # dL/dA = dL/dC @ B^T
+                grad = np.matmul(out.grad, other.data.swapaxes(-2, -1))
+                self.grad += Tensor._unbroadcast(grad, self.data.shape)
+            if other.requires_grad:
+                # dL/dB = A^T @ dL/dC
+                grad = np.matmul(self.data.swapaxes(-2, -1), out.grad)
+                other.grad += Tensor._unbroadcast(grad, other.data.shape)
+        out._backward = _backward
+        return out
+
+    def __matmul__(self, other):
+        """支持 @ 运算符"""
+        return self.matmul(other)
     
     def backward(self):
         # 拓扑排序

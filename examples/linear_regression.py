@@ -14,7 +14,7 @@ import os
 
 # 添加项目根目录到路径
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from src.tensor import Tensor
+from minitf.tensor import Tensor
 
 
 def generate_data(n_samples=100, true_w=2.5, true_b=1.5, noise=0.1):

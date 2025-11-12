@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 使用示例文件，展示如何使用 Tensor 类进行自动微分计算
 """
@@ -6,10 +5,10 @@
 import sys
 import os
 
-# 添加src目录到Python路径
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# 添加项目根目录到路径
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from tensor import Tensor
+from minitf.tensor import Tensor
 
 def main():
     print("AutoGrad Tensor Library 使用示例")
