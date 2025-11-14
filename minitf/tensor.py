@@ -1,10 +1,17 @@
+from typing import Any, Optional, Tuple, Union
 import numpy as np
 
 
 class Tensor:
     """支持自动微分的张量类"""
 
-    def __init__(self, data, requires_grad=False, _children=(), _op=''):
+    def __init__(
+        self,
+        data: Union[float, int, list, np.ndarray],
+        requires_grad: bool = False,
+        _children: Tuple['Tensor', ...] = (),
+        _op: str = ''
+    ) -> None:
         self.data = np.array(data, dtype=np.float32)
         self.grad = np.zeros_like(self.data)
         self._backward = lambda: None
@@ -13,7 +20,7 @@ class Tensor:
         self.requires_grad = requires_grad or any(child.requires_grad for child in _children)
 
     @staticmethod
-    def _unbroadcast(grad, shape):
+    def _unbroadcast(grad: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
         """
         处理广播后的梯度，将其还原到原始形状
 
@@ -39,8 +46,8 @@ class Tensor:
                 grad = grad.sum(axis=i, keepdims=True)
 
         return grad
-        
-    def __add__(self, other):
+
+    def __add__(self, other: Union['Tensor', float, int]) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data + other.data, _children=(self, other), _op='+')
 
@@ -51,8 +58,8 @@ class Tensor:
                 other.grad += Tensor._unbroadcast(out.grad, other.data.shape)
         out._backward = _backward
         return out
-    
-    def __mul__(self, other):
+
+    def __mul__(self, other: Union['Tensor', float, int]) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data * other.data, _children=(self, other), _op='*')
 
@@ -63,19 +70,19 @@ class Tensor:
                 other.grad += Tensor._unbroadcast(self.data * out.grad, other.data.shape)
         out._backward = _backward
         return out
-    
-    def __pow__(self, exponent):
+
+    def __pow__(self, exponent: Union['Tensor', float, int]) -> 'Tensor':
         if isinstance(exponent, Tensor):
             exponent = exponent.data
         out = Tensor(self.data ** exponent, _children=(self,), _op=f'**{exponent}')
-        
+
         def _backward():
             if self.requires_grad:
                 self.grad += (exponent * self.data**(exponent-1)) * out.grad
         out._backward = _backward
         return out
-    
-    def __truediv__(self, other):
+
+    def __truediv__(self, other: Union['Tensor', float, int]) -> 'Tensor':
         other = other if isinstance(other, Tensor) else Tensor(other)
         out = Tensor(self.data / other.data, _children=(self, other), _op='/')
 
@@ -86,37 +93,37 @@ class Tensor:
                 other.grad += Tensor._unbroadcast((-self.data / (other.data ** 2)) * out.grad, other.data.shape)
         out._backward = _backward
         return out
-    
-    def sigmoid(self):
+
+    def sigmoid(self) -> 'Tensor':
         x = self.data
         s = 1 / (1 + np.exp(-x))
         out = Tensor(s, _children=(self,), _op='sigmoid')
-        
+
         def _backward():
             if self.requires_grad:
                 self.grad += (s * (1 - s)) * out.grad
         out._backward = _backward
         return out
-    
-    def sin(self):
+
+    def sin(self) -> 'Tensor':
         out = Tensor(np.sin(self.data), _children=(self,), _op='sin')
-        
+
         def _backward():
             if self.requires_grad:
                 self.grad += np.cos(self.data) * out.grad
         out._backward = _backward
         return out
-    
-    def log(self):
+
+    def log(self) -> 'Tensor':
         out = Tensor(np.log(self.data), _children=(self,), _op='log')
-        
+
         def _backward():
             if self.requires_grad:
                 self.grad += (1 / self.data) * out.grad
         out._backward = _backward
         return out
     
-    def sum(self, axis=None, keepdims=False):
+    def sum(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
         """
         对张量进行求和
 
@@ -149,7 +156,7 @@ class Tensor:
         out._backward = _backward
         return out
 
-    def relu(self):
+    def relu(self) -> 'Tensor':
         """ReLU 激活函数: max(0, x)"""
         out = Tensor(np.maximum(0, self.data), _children=(self,), _op='relu')
 
@@ -159,7 +166,7 @@ class Tensor:
         out._backward = _backward
         return out
 
-    def exp(self):
+    def exp(self) -> 'Tensor':
         """
         指数函数
         x.exp() = e^x
@@ -172,7 +179,7 @@ class Tensor:
         out._backward = _backward
         return out
 
-    def max(self, axis=None, keepdims=False):
+    def max(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
         """
         求最大值
 
@@ -212,7 +219,7 @@ class Tensor:
         out._backward = _backward
         return out
 
-    def matmul(self, other):
+    def matmul(self, other: Union['Tensor', np.ndarray]) -> 'Tensor':
         """
         矩阵乘法
 
@@ -234,10 +241,74 @@ class Tensor:
         out._backward = _backward
         return out
 
-    def __matmul__(self, other):
+    def __matmul__(self, other: Union['Tensor', np.ndarray]) -> 'Tensor':
         """支持 @ 运算符"""
         return self.matmul(other)
-    
+
+    def transpose(self, axes=None):
+        """
+        转置张量
+
+        Args:
+            axes: 轴的排列顺序，None表示反转所有轴
+
+        Returns:
+            转置后的张量
+        """
+        if axes is None:
+            axes = tuple(range(len(self.data.shape) - 1, -1, -1))
+
+        out = Tensor(np.transpose(self.data, axes), _children=(self,), _op='transpose')
+
+        def _backward():
+            if self.requires_grad:
+                # 转置的梯度是反向转置
+                inverse_axes = np.argsort(axes)
+                self.grad += np.transpose(out.grad, inverse_axes)
+        out._backward = _backward
+        return out
+
+    def reshape(self, *shape):
+        """
+        改变张量形状
+
+        Args:
+            *shape: 新的形状
+
+        Returns:
+            改变形状后的张量
+        """
+        # 如果传入的是一个元组，解包它
+        if len(shape) == 1 and isinstance(shape[0], (tuple, list)):
+            shape = shape[0]
+
+        out = Tensor(self.data.reshape(shape), _children=(self,), _op='reshape')
+
+        def _backward():
+            if self.requires_grad:
+                self.grad += out.grad.reshape(self.data.shape)
+        out._backward = _backward
+        return out
+
+    def sqrt(self):
+        """
+        平方根函数
+        sqrt(x) = x^0.5
+        """
+        out = Tensor(np.sqrt(self.data), _children=(self,), _op='sqrt')
+
+        def _backward():
+            if self.requires_grad:
+                # d(sqrt(x))/dx = 1/(2*sqrt(x))
+                self.grad += (0.5 / np.sqrt(self.data)) * out.grad
+        out._backward = _backward
+        return out
+
+    @property
+    def shape(self):
+        """返回张量的形状"""
+        return self.data.shape
+
     def backward(self):
         # 拓扑排序
         topo = []

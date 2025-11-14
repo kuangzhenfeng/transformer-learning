@@ -11,7 +11,10 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from minitf.tensor import Tensor
-from minitf.nn import Linear, ReLU, Sigmoid, Sequential, softmax, cross_entropy_loss, mse_loss
+from minitf.nn import (
+    Linear, ReLU, Sigmoid, Sequential, softmax, cross_entropy_loss, mse_loss,
+    scaled_dot_product_attention, MultiHeadAttention
+)
 
 
 class TestTensorOperations(unittest.TestCase):
@@ -259,7 +262,198 @@ class TestEndToEnd(unittest.TestCase):
             self.assertTrue(np.all(param.grad == 0))
 
 
+class TestNewTensorOperations(unittest.TestCase):
+    """测试新增的 Tensor 操作（用于 Attention）"""
+
+    def test_transpose(self):
+        """测试转置操作"""
+        # 测试 2D 转置
+        x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True)
+        y = x.transpose()
+
+        # 检查前向传播
+        expected = np.array([[1.0, 4.0], [2.0, 5.0], [3.0, 6.0]], dtype=np.float32)
+        self.assertTrue(np.allclose(y.data, expected))
+
+        # 检查反向传播
+        y.backward()
+        expected_grad = np.ones((2, 3), dtype=np.float32)
+        self.assertTrue(np.allclose(x.grad, expected_grad))
+
+    def test_transpose_3d(self):
+        """测试 3D 转置操作"""
+        x = Tensor(np.random.randn(2, 3, 4), requires_grad=True)
+        y = x.transpose((0, 2, 1))  # 交换最后两个维度
+
+        # 检查形状
+        self.assertEqual(y.shape, (2, 4, 3))
+
+        # 检查反向传播
+        y.backward()
+        self.assertEqual(x.grad.shape, x.shape)
+
+    def test_reshape(self):
+        """测试 reshape 操作"""
+        x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True)
+        y = x.reshape(3, 2)
+
+        # 检查前向传播
+        expected = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]], dtype=np.float32)
+        self.assertTrue(np.allclose(y.data, expected))
+
+        # 检查反向传播
+        y.backward()
+        expected_grad = np.ones((2, 3), dtype=np.float32)
+        self.assertTrue(np.allclose(x.grad, expected_grad))
+
+    def test_sqrt(self):
+        """测试平方根操作"""
+        x = Tensor([1.0, 4.0, 9.0, 16.0], requires_grad=True)
+        y = x.sqrt()
+
+        # 检查前向传播
+        expected = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
+        self.assertTrue(np.allclose(y.data, expected))
+
+        # 检查反向传播
+        y.backward()
+        expected_grad = np.array([0.5, 0.25, 1/6, 0.125], dtype=np.float32)
+        self.assertTrue(np.allclose(x.grad, expected_grad))
+
+    def test_shape_property(self):
+        """测试 shape 属性"""
+        x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        self.assertEqual(x.shape, (2, 3))
+
+
+class TestAttention(unittest.TestCase):
+    """测试 Attention 机制"""
+
+    def test_scaled_dot_product_attention_basic(self):
+        """测试基本的 Scaled Dot-Product Attention"""
+        batch_size = 2
+        seq_len = 3
+        d_k = 4
+        d_v = 5
+
+        # 创建随机的 Q, K, V
+        np.random.seed(42)
+        Q = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+        K = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+        V = Tensor(np.random.randn(batch_size, seq_len, d_v), requires_grad=True)
+
+        # 计算注意力
+        output, weights = scaled_dot_product_attention(Q, K, V)
+
+        # 检查输出形状
+        self.assertEqual(output.shape, (batch_size, seq_len, d_v))
+        self.assertEqual(weights.shape, (batch_size, seq_len, seq_len))
+
+        # 检查注意力权重是否归一化（每行和为1）
+        weights_sum = np.sum(weights.data, axis=-1)
+        expected_sum = np.ones((batch_size, seq_len), dtype=np.float32)
+        self.assertTrue(np.allclose(weights_sum, expected_sum, atol=1e-6))
+
+        # 检查反向传播
+        loss = output.sum()
+        loss.backward()
+
+        # 确保梯度已计算
+        self.assertTrue(Q.grad is not None)
+        self.assertTrue(K.grad is not None)
+        self.assertTrue(V.grad is not None)
+        self.assertEqual(Q.grad.shape, Q.shape)
+        self.assertEqual(K.grad.shape, K.shape)
+        self.assertEqual(V.grad.shape, V.shape)
+
+    def test_scaled_dot_product_attention_with_mask(self):
+        """测试带掩码的 Scaled Dot-Product Attention"""
+        batch_size = 1
+        seq_len = 4
+        d_k = 8
+
+        # 创建 Q, K, V
+        np.random.seed(42)
+        Q = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+        K = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+        V = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+
+        # 创建因果掩码（上三角掩码）
+        mask = np.triu(np.ones((seq_len, seq_len)), k=1).astype(bool)
+        mask = np.broadcast_to(mask, (batch_size, seq_len, seq_len))
+
+        # 计算注意力
+        output, weights = scaled_dot_product_attention(Q, K, V, mask=mask)
+
+        # 检查掩码位置的权重接近0
+        for i in range(seq_len):
+            for j in range(i + 1, seq_len):
+                self.assertTrue(weights.data[0, i, j] < 1e-3)
+
+    def test_multi_head_attention_basic(self):
+        """测试基本的 Multi-Head Attention"""
+        batch_size = 2
+        seq_len = 5
+        d_model = 16
+        num_heads = 4
+
+        # 创建 Multi-Head Attention 层
+        mha = MultiHeadAttention(d_model, num_heads)
+
+        # 创建输入
+        np.random.seed(42)
+        Q = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+        K = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+        V = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+
+        # 前向传播
+        output = mha(Q, K, V)
+
+        # 检查输出形状
+        self.assertEqual(output.shape, (batch_size, seq_len, d_model))
+
+        # 检查反向传播
+        loss = output.sum()
+        loss.backward()
+
+        # 确保梯度已计算
+        self.assertTrue(Q.grad is not None)
+        self.assertTrue(K.grad is not None)
+        self.assertTrue(V.grad is not None)
+
+        # 检查参数梯度
+        for param in mha.parameters():
+            self.assertTrue(param.grad is not None)
+            self.assertEqual(param.grad.shape, param.shape)
+
+    def test_multi_head_attention_self_attention(self):
+        """测试 Self-Attention（Q=K=V）"""
+        batch_size = 2
+        seq_len = 4
+        d_model = 12
+        num_heads = 3
+
+        # 创建 Multi-Head Attention 层
+        mha = MultiHeadAttention(d_model, num_heads)
+
+        # 创建输入（Self-Attention）
+        np.random.seed(42)
+        X = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+
+        # 前向传播
+        output = mha(X, X, X)
+
+        # 检查输出形状
+        self.assertEqual(output.shape, (batch_size, seq_len, d_model))
+
+        # 检查反向传播
+        loss = output.sum()
+        loss.backward()
+
+        # 确保梯度已计算
+        self.assertTrue(X.grad is not None)
+        self.assertEqual(X.grad.shape, X.shape)
+
+
 if __name__ == '__main__':
     unittest.main()
-
-

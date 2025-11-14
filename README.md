@@ -69,7 +69,8 @@
 ├── examples/            # 示例代码目录
 │   ├── tensor_example.py           # 张量使用示例 (阶段1任务1)
 │   ├── linear_regression.py        # 线性回归训练示例 (阶段1任务2)
-│   └── mlp_classification.py       # MLP 分类训练示例 (阶段1任务3)
+│   ├── mlp_classification.py       # MLP 分类训练示例 (阶段1任务3)
+│   └── attention_example.py        # Attention 机制示例 (阶段2任务1)
 ├── requirements.txt     # 依赖包列表
 └── README.md            # 项目说明文件
 ```
@@ -100,6 +101,17 @@
 - 扩展 Tensor 类：添加 relu、exp、max、matmul 等操作
 - 成功训练 MLP 解决 XOR 问题（准确率 100%）
 - 成功训练 MLP 解决螺旋形多类分类问题（准确率 98%）
+
+## 阶段2完成情况
+
+### 任务1：Scaled Dot-Product Attention 和 Multi-Head Attention ✅
+已完成 Transformer 核心注意力机制的实现：
+- 实现 Scaled Dot-Product Attention：Attention(Q, K, V) = softmax(QK^T / sqrt(d_k))V
+- 支持可选的注意力掩码（用于因果注意力等场景）
+- 实现 Multi-Head Attention：并行计算多个注意力头
+- 扩展 Tensor 类：添加 transpose、reshape、sqrt 等操作
+- 实现完整的前向传播和反向传播
+- 通过全面的单元测试验证正确性
 
 ## 安装依赖
 
@@ -202,4 +214,36 @@ for epoch in range(epochs):
 
     # 清零梯度
     model.zero_grad()
+```
+
+### Attention 机制示例
+
+```bash
+# 运行 Attention 机制示例
+python examples/attention_example.py
+```
+
+该示例展示了如何：
+- 使用 Scaled Dot-Product Attention 计算注意力
+- 使用因果掩码实现自回归注意力
+- 使用 Multi-Head Attention 进行多头注意力计算
+- 理解注意力权重的含义和分布
+
+示例代码：
+
+```python
+from minitf.tensor import Tensor
+from minitf.nn import scaled_dot_product_attention, MultiHeadAttention
+
+# 示例1：基本的 Scaled Dot-Product Attention
+Q = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+K = Tensor(np.random.randn(batch_size, seq_len, d_k), requires_grad=True)
+V = Tensor(np.random.randn(batch_size, seq_len, d_v), requires_grad=True)
+
+output, attention_weights = scaled_dot_product_attention(Q, K, V)
+
+# 示例2：Multi-Head Attention
+mha = MultiHeadAttention(d_model=16, num_heads=4)
+X = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+output = mha(X, X, X)  # Self-Attention
 ```
