@@ -421,3 +421,187 @@ class MultiHeadAttention(Module):
     def __repr__(self) -> str:
         return f"MultiHeadAttention(d_model={self.d_model}, num_heads={self.num_heads}, d_k={self.d_k})"
 
+
+class LayerNorm(Module):
+    """
+    Layer Normalization 层（层归一化）
+
+    对输入的最后一个维度(特征维度)进行归一化：
+    LayerNorm(x) = gamma * (x - mean) / sqrt(var + eps) + beta
+
+    Args:
+        normalized_shape: 需要归一化的维度大小（通常是特征维度）
+        eps: 用于数值稳定性的小常数
+    """
+
+    def __init__(self, normalized_shape: int, eps: float = 1e-5) -> None:
+        self.normalized_shape = normalized_shape
+        self.eps = eps
+
+        # 可学习的缩放参数 gamma（初始化为1）
+        self.gamma = Tensor(np.ones(normalized_shape, dtype=np.float32), requires_grad=True)
+
+        # 可学习的偏移参数 beta（初始化为0）
+        self.beta = Tensor(np.zeros(normalized_shape, dtype=np.float32), requires_grad=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        前向传播
+
+        Args:
+            x: 输入张量，形状为 (..., normalized_shape)
+
+        Returns:
+            归一化后的张量，形状与输入相同
+        """
+        # 计算最后一个维度的均值和方差
+        # x: (..., normalized_shape)
+        mean = x.mean(axis=-1, keepdims=True)  # (..., 1)
+        var = x.var(axis=-1, keepdims=True)    # (..., 1)
+
+        # 归一化: (x - mean) / sqrt(var + eps)
+        normalized = (x + (mean * Tensor(-1.0))) / (var + Tensor(self.eps)).sqrt()
+
+        # 应用可学习的缩放和偏移
+        output = normalized * self.gamma + self.beta
+
+        return output
+
+    def parameters(self) -> List[Tensor]:
+        """返回层的参数"""
+        return [self.gamma, self.beta]
+
+    def __repr__(self) -> str:
+        return f"LayerNorm(normalized_shape={self.normalized_shape}, eps={self.eps})"
+
+
+class PositionwiseFeedForward(Module):
+    """
+    Position-wise Feed-Forward Network （逐位置前馈网络）
+
+    FFN(x) = max(0, xW1 + b1)W2 + b2
+
+    这是一个两层的全连接网络，中间使用 ReLU 激活函数。
+    在 Transformer 中，通常第一层会扩展维度（例如 d_model -> 4*d_model），
+    第二层再压缩回原始维度（4*d_model -> d_model）。
+
+    Args:
+        d_model: 输入和输出的维度
+        d_ff: 中间层的维度（通常是 d_model 的 4 倍）
+    """
+
+    def __init__(self, d_model: int, d_ff: int) -> None:
+        self.d_model = d_model
+        self.d_ff = d_ff
+
+        # 第一层：d_model -> d_ff
+        self.linear1 = Linear(d_model, d_ff, bias=True)
+
+        # ReLU 激活
+        self.relu = ReLU()
+
+        # 第二层：d_ff -> d_model
+        self.linear2 = Linear(d_ff, d_model, bias=True)
+
+    def forward(self, x: Tensor) -> Tensor:
+        """
+        前向传播
+
+        Args:
+            x: 输入张量，形状为 (..., d_model)
+
+        Returns:
+            输出张量，形状为 (..., d_model)
+        """
+        # x -> linear1 -> relu -> linear2
+        x = self.linear1(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        return x
+
+    def parameters(self) -> List[Tensor]:
+        """返回所有参数"""
+        params = []
+        params.extend(self.linear1.parameters())
+        params.extend(self.linear2.parameters())
+        return params
+
+    def __repr__(self) -> str:
+        return f"PositionwiseFeedForward(d_model={self.d_model}, d_ff={self.d_ff})"
+
+
+class TransformerBlock(Module):
+    """
+    Transformer 编码器块
+
+    一个完整的 Transformer 编码器块包含：
+    1. Multi-Head Self-Attention + 残差连接 + Layer Normalization
+    2. Position-wise Feed-Forward Network + 残差连接 + Layer Normalization
+
+    结构：
+    x -> LayerNorm -> MultiHeadAttention -> 残差连接 ->
+         LayerNorm -> FeedForward -> 残差连接 -> output
+
+    注意：这里使用 Pre-LN 结构（Layer Normalization 在子层之前），
+    这在现代 Transformer 实现中更常见，训练更稳定。
+
+    Args:
+        d_model: 模型的维度
+        num_heads: 注意力头的数量
+        d_ff: Feed-Forward 网络的中间层维度
+        eps: Layer Normalization 的 epsilon
+    """
+
+    def __init__(self, d_model: int, num_heads: int, d_ff: int, eps: float = 1e-5) -> None:
+        self.d_model = d_model
+        self.num_heads = num_heads
+        self.d_ff = d_ff
+
+        # Multi-Head Attention
+        self.attention = MultiHeadAttention(d_model, num_heads)
+
+        # Position-wise Feed-Forward Network
+        self.feed_forward = PositionwiseFeedForward(d_model, d_ff)
+
+        # Layer Normalization 层
+        self.norm1 = LayerNorm(d_model, eps)
+        self.norm2 = LayerNorm(d_model, eps)
+
+    def forward(self, x: Tensor, mask: Optional[np.ndarray] = None) -> Tensor:
+        """
+        前向传播
+
+        Args:
+            x: 输入张量，形状为 (batch_size, seq_len, d_model)
+            mask: 可选的注意力掩码
+
+        Returns:
+            输出张量，形状为 (batch_size, seq_len, d_model)
+        """
+        # 1. Multi-Head Self-Attention with residual connection
+        # Pre-LN: LayerNorm(层归一化norm) -> Attention -> Residual(残差连接add)
+        normed = self.norm1(x)
+        attention_output = self.attention(normed, normed, normed, mask)
+        x = x + attention_output  # 残差连接
+
+        # 2. Feed-Forward Network with residual connection
+        # Pre-LN: LayerNorm -> FFN -> Residual
+        normed = self.norm2(x)
+        ff_output = self.feed_forward(normed)
+        x = x + ff_output  # 残差连接
+
+        return x
+
+    def parameters(self) -> List[Tensor]:
+        """返回所有参数"""
+        params = []
+        params.extend(self.attention.parameters())
+        params.extend(self.feed_forward.parameters())
+        params.extend(self.norm1.parameters())
+        params.extend(self.norm2.parameters())
+        return params
+
+    def __repr__(self) -> str:
+        return (f"TransformerBlock(d_model={self.d_model}, num_heads={self.num_heads}, "
+                f"d_ff={self.d_ff})")
+

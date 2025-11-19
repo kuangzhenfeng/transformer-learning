@@ -304,6 +304,84 @@ class Tensor:
         out._backward = _backward
         return out
 
+    def mean(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False) -> 'Tensor':
+        """
+        计算张量的均值
+
+        Args:
+            axis: 求均值的轴，None表示对所有元素求均值
+            keepdims: 是否保持维度
+
+        Returns:
+            均值张量
+        """
+        out = Tensor(np.mean(self.data, axis=axis, keepdims=keepdims), _children=(self,), _op='mean')
+
+        def _backward():
+            if self.requires_grad:
+                if axis is None:
+                    # 对所有元素求均值，梯度均匀分配到所有位置
+                    self.grad += np.ones_like(self.data) * out.grad / self.data.size
+                else:
+                    # 对特定轴求均值
+                    grad_shape = list(self.data.shape)
+                    if not keepdims:
+                        # 如果没有保持维度，需要在求均值的轴上添加维度
+                        if isinstance(axis, int):
+                            axes = [axis]
+                        else:
+                            axes = list(axis)
+                        for ax in sorted(axes):
+                            grad_shape[ax] = 1
+                        expanded_grad = out.grad.reshape(grad_shape)
+                    else:
+                        expanded_grad = out.grad
+
+                    # 计算归一化因子
+                    if isinstance(axis, int):
+                        n = self.data.shape[axis]
+                    else:
+                        n = np.prod([self.data.shape[ax] for ax in axis])
+
+                    self.grad += np.broadcast_to(expanded_grad, self.data.shape) / n
+        out._backward = _backward
+        return out
+
+    def var(self, axis: Optional[Union[int, Tuple[int, ...]]] = None, keepdims: bool = False, unbiased: bool = False) -> 'Tensor':
+        """
+        计算张量的方差
+
+        Args:
+            axis: 求方差的轴，None表示对所有元素求方差
+            keepdims: 是否保持维度
+            unbiased: 是否使用无偏估计（除以 n-1 而不是 n）
+
+        Returns:
+            方差张量
+        """
+        # 计算均值
+        mean_val = self.mean(axis=axis, keepdims=True)
+
+        # 计算 (x - mean)^2
+        diff = self + (mean_val * Tensor(-1.0))
+        squared_diff = diff ** 2
+
+        # 计算方差
+        if unbiased:
+            # 无偏估计：除以 n-1
+            if axis is None:
+                n = self.data.size
+            elif isinstance(axis, int):
+                n = self.data.shape[axis]
+            else:
+                n = np.prod([self.data.shape[ax] for ax in axis])
+            var_val = squared_diff.sum(axis=axis, keepdims=keepdims) * Tensor(1.0 / (n - 1))
+        else:
+            # 有偏估计：除以 n
+            var_val = squared_diff.mean(axis=axis, keepdims=keepdims)
+
+        return var_val
+
     @property
     def shape(self):
         """返回张量的形状"""

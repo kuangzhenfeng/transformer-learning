@@ -113,10 +113,10 @@ def example_multi_head_attention():
     print("=" * 60)
     
     # 设置参数
-    batch_size = 2
-    seq_len = 6
-    d_model = 16    # 模型维度
-    num_heads = 4   # 注意力头数
+    batch_size = 2  # 批量大小：并行处理的序列数量，用于优化并行效率
+    seq_len = 6     # 序列长度：单个序列的token数量，直接控制模型上下文窗口大小
+    d_model = 16    # 模型维度：每个token的向量维度，决定模型的表示能力和参数规模
+    num_heads = 4   # 注意力头数：多头注意力的头数量，允许模型同时关注不同方面的语义信息
     
     print(f"\n参数:")
     print(f"  d_model (模型维度): {d_model}")

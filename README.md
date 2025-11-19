@@ -70,7 +70,8 @@
 │   ├── tensor_example.py           # 张量使用示例 (阶段1任务1)
 │   ├── linear_regression.py        # 线性回归训练示例 (阶段1任务2)
 │   ├── mlp_classification.py       # MLP 分类训练示例 (阶段1任务3)
-│   └── attention_example.py        # Attention 机制示例 (阶段2任务1)
+│   ├── attention_example.py        # Attention 机制示例 (阶段2任务1)
+│   └── transformer_block_example.py # Transformer Block 示例 (阶段2任务2)
 ├── requirements.txt     # 依赖包列表
 └── README.md            # 项目说明文件
 ```
@@ -112,6 +113,16 @@
 - 扩展 Tensor 类：添加 transpose、reshape、sqrt 等操作
 - 实现完整的前向传播和反向传播
 - 通过全面的单元测试验证正确性
+
+### 任务2：组装完整的 Transformer 编码器块 ✅
+已完成完整的 Transformer 编码器块的实现：
+- 实现 LayerNorm 层：对特征维度进行归一化，包含可学习的缩放和偏移参数
+- 实现 Position-wise Feed-Forward Network：两层全连接网络，中间使用 ReLU 激活
+- 实现完整的 Transformer Block：集成 Multi-Head Attention、FFN、残差连接和 Layer Normalization
+- 采用 Pre-LN 结构（Layer Normalization 在子层之前），训练更稳定
+- 扩展 Tensor 类：添加 mean、var 等统计操作
+- 支持因果掩码和堆叠多层 Transformer Block
+- 通过全面的单元测试验证正确性（47个测试全部通过）
 
 ## 安装依赖
 
@@ -246,4 +257,48 @@ output, attention_weights = scaled_dot_product_attention(Q, K, V)
 mha = MultiHeadAttention(d_model=16, num_heads=4)
 X = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
 output = mha(X, X, X)  # Self-Attention
+```
+
+### Transformer Block 示例
+
+```bash
+# 运行 Transformer Block 示例
+python examples/transformer_block_example.py
+```
+
+该示例展示了如何：
+- 使用 LayerNorm 进行层归一化
+- 使用 Position-wise Feed-Forward Network
+- 使用完整的 Transformer 编码器块
+- 使用因果掩码实现自回归 Transformer
+- 堆叠多个 Transformer Block 构建深层网络
+- 理解残差连接的作用
+
+示例代码：
+
+```python
+from minitf.tensor import Tensor
+from minitf.nn import LayerNorm, PositionwiseFeedForward, TransformerBlock
+
+# 示例1：LayerNorm
+layer_norm = LayerNorm(d_model=16)
+x = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+y = layer_norm(x)
+
+# 示例2：Position-wise Feed-Forward Network
+ffn = PositionwiseFeedForward(d_model=16, d_ff=64)
+y = ffn(x)
+
+# 示例3：完整的 Transformer Block
+block = TransformerBlock(d_model=16, num_heads=4, d_ff=64)
+y = block(x)
+
+# 示例4：带因果掩码的 Transformer Block
+mask = np.triu(np.ones((seq_len, seq_len)), k=1).astype(bool)
+y = block(x, mask=mask)
+
+# 示例5：堆叠多个 Transformer Block
+blocks = [TransformerBlock(d_model=16, num_heads=4, d_ff=64) for _ in range(3)]
+for block in blocks:
+    x = block(x)
 ```

@@ -13,7 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from minitf.tensor import Tensor
 from minitf.nn import (
     Linear, ReLU, Sigmoid, Sequential, softmax, cross_entropy_loss, mse_loss,
-    scaled_dot_product_attention, MultiHeadAttention
+    scaled_dot_product_attention, MultiHeadAttention,
+    LayerNorm, PositionwiseFeedForward, TransformerBlock
 )
 
 
@@ -171,7 +172,6 @@ class TestLossFunctions(unittest.TestCase):
         """测试 softmax 函数"""
         x = Tensor([[1.0, 2.0, 3.0]], requires_grad=True)
         y = softmax(x, axis=1)
-        print(y.data)
 
         # 检查 softmax 的和为 1
         self.assertAlmostEqual(np.sum(y.data), 1.0, places=5)
@@ -453,6 +453,237 @@ class TestAttention(unittest.TestCase):
         # 确保梯度已计算
         self.assertTrue(X.grad is not None)
         self.assertEqual(X.grad.shape, X.shape)
+
+
+class TestTensorMeanVar(unittest.TestCase):
+    """测试 Tensor 的 mean 和 var 操作"""
+
+    def test_mean_all(self):
+        """测试对所有元素求均值"""
+        x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True)
+        y = x.mean()
+
+        # 检查前向传播
+        expected = 3.5  # (1+2+3+4+5+6) / 6
+        self.assertTrue(np.allclose(y.data, expected))
+
+        # 检查反向传播
+        y.backward()
+        expected_grad = np.ones((2, 3), dtype=np.float32) / 6
+        self.assertTrue(np.allclose(x.grad, expected_grad))
+
+    def test_mean_axis(self):
+        """测试沿指定轴求均值"""
+        x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True)
+        print(x.shape)
+        y = x.mean(axis=1, keepdims=True)
+
+        # 检查前向传播
+        expected = np.array([[2.0], [5.0]], dtype=np.float32)
+        self.assertTrue(np.allclose(y.data, expected))
+
+        # 检查反向传播
+        y.backward()
+        expected_grad = np.ones((2, 3), dtype=np.float32) / 3
+        self.assertTrue(np.allclose(x.grad, expected_grad))
+
+    def test_var(self):
+        """测试方差计算"""
+        x = Tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], requires_grad=True)
+        y = x.var(axis=1, keepdims=True)
+
+        # 检查前向传播
+        # 第一行: var([1, 2, 3]) = ((1-2)^2 + (2-2)^2 + (3-2)^2) / 3 = 2/3
+        # 第二行: var([4, 5, 6]) = ((4-5)^2 + (5-5)^2 + (6-5)^2) / 3 = 2/3
+        expected = np.array([[2.0/3.0], [2.0/3.0]], dtype=np.float32)
+        self.assertTrue(np.allclose(y.data, expected, atol=1e-5))
+
+
+class TestLayerNorm(unittest.TestCase):
+    """测试 LayerNorm 层"""
+
+    def test_layernorm_forward(self):
+        """测试 LayerNorm 的前向传播"""
+        d_model = 4
+        layer_norm = LayerNorm(d_model)
+
+        # 手动设置 gamma 和 beta
+        layer_norm.gamma = Tensor(np.ones(d_model, dtype=np.float32), requires_grad=True)
+        layer_norm.beta = Tensor(np.zeros(d_model, dtype=np.float32), requires_grad=True)
+
+        # 输入
+        x = Tensor([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]], requires_grad=True)
+
+        # 前向传播
+        y = layer_norm(x)
+
+        # 检查输出形状
+        self.assertEqual(y.shape, x.shape)
+
+        # 检查归一化后的均值接近0，方差接近1
+        for i in range(x.shape[0]):
+            mean = np.mean(y.data[i])
+            var = np.var(y.data[i])
+            self.assertTrue(np.abs(mean) < 1e-5, f"Mean should be close to 0, got {mean}")
+            self.assertTrue(np.abs(var - 1.0) < 1e-5, f"Var should be close to 1, got {var}")
+
+    def test_layernorm_backward(self):
+        """测试 LayerNorm 的反向传播"""
+        d_model = 4
+        layer_norm = LayerNorm(d_model)
+
+        x = Tensor(np.random.randn(2, 3, d_model), requires_grad=True)
+
+        # 前向传播
+        y = layer_norm(x)
+
+        # 反向传播
+        loss = y.sum()
+        loss.backward()
+
+        # 确保梯度已计算
+        self.assertTrue(x.grad is not None)
+        self.assertEqual(x.grad.shape, x.shape)
+        self.assertTrue(layer_norm.gamma.grad is not None)
+        self.assertTrue(layer_norm.beta.grad is not None)
+
+    def test_layernorm_parameters(self):
+        """测试 LayerNorm 的参数"""
+        d_model = 4
+        layer_norm = LayerNorm(d_model)
+
+        params = layer_norm.parameters()
+        self.assertEqual(len(params), 2)  # gamma 和 beta
+        self.assertEqual(params[0].shape, (d_model,))
+        self.assertEqual(params[1].shape, (d_model,))
+
+
+class TestPositionwiseFeedForward(unittest.TestCase):
+    """测试 PositionwiseFeedForward 层"""
+
+    def test_ffn_forward(self):
+        """测试 FFN 的前向传播"""
+        d_model = 8
+        d_ff = 32
+        ffn = PositionwiseFeedForward(d_model, d_ff)
+
+        # 输入
+        batch_size, seq_len = 2, 3
+        x = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+
+        # 前向传播
+        y = ffn(x)
+
+        # 检查输出形状
+        self.assertEqual(y.shape, (batch_size, seq_len, d_model))
+
+    def test_ffn_backward(self):
+        """测试 FFN 的反向传播"""
+        d_model = 8
+        d_ff = 32
+        ffn = PositionwiseFeedForward(d_model, d_ff)
+
+        x = Tensor(np.random.randn(2, 3, d_model), requires_grad=True)
+
+        # 前向传播
+        y = ffn(x)
+
+        # 反向传播
+        loss = y.sum()
+        loss.backward()
+
+        # 确保梯度已计算
+        self.assertTrue(x.grad is not None)
+        self.assertEqual(x.grad.shape, x.shape)
+
+    def test_ffn_parameters(self):
+        """测试 FFN 的参数"""
+        d_model = 8
+        d_ff = 32
+        ffn = PositionwiseFeedForward(d_model, d_ff)
+
+        params = ffn.parameters()
+        # 两个 Linear 层，每个有 weight 和 bias
+        self.assertEqual(len(params), 4)
+
+
+class TestTransformerBlock(unittest.TestCase):
+    """测试 TransformerBlock"""
+
+    def test_transformer_block_forward(self):
+        """测试 Transformer Block 的前向传播"""
+        d_model = 16
+        num_heads = 4
+        d_ff = 64
+
+        block = TransformerBlock(d_model, num_heads, d_ff)
+
+        # 输入
+        batch_size, seq_len = 2, 5
+        x = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+
+        # 前向传播
+        y = block(x)
+
+        # 检查输出形状
+        self.assertEqual(y.shape, (batch_size, seq_len, d_model))
+
+    def test_transformer_block_backward(self):
+        """测试 Transformer Block 的反向传播"""
+        d_model = 16
+        num_heads = 4
+        d_ff = 64
+
+        block = TransformerBlock(d_model, num_heads, d_ff)
+
+        x = Tensor(np.random.randn(2, 5, d_model), requires_grad=True)
+
+        # 前向传播
+        y = block(x)
+
+        # 反向传播
+        loss = y.sum()
+        loss.backward()
+
+        # 确保梯度已计算
+        self.assertTrue(x.grad is not None)
+        self.assertEqual(x.grad.shape, x.shape)
+
+    def test_transformer_block_with_mask(self):
+        """测试带掩码的 Transformer Block"""
+        d_model = 16
+        num_heads = 4
+        d_ff = 64
+
+        block = TransformerBlock(d_model, num_heads, d_ff)
+
+        # 输入
+        batch_size, seq_len = 2, 5
+        x = Tensor(np.random.randn(batch_size, seq_len, d_model), requires_grad=True)
+
+        # 创建因果掩码（上三角掩码）
+        mask = np.triu(np.ones((seq_len, seq_len)), k=1).astype(bool)
+
+        # 前向传播
+        y = block(x, mask=mask)
+
+        # 检查输出形状
+        self.assertEqual(y.shape, (batch_size, seq_len, d_model))
+
+    def test_transformer_block_parameters(self):
+        """测试 Transformer Block 的参数"""
+        d_model = 16
+        num_heads = 4
+        d_ff = 64
+
+        block = TransformerBlock(d_model, num_heads, d_ff)
+
+        params = block.parameters()
+        # MultiHeadAttention: 4个Linear层 (W_q, W_k, W_v, W_o)，每个没有bias，所以4个参数
+        # PositionwiseFeedForward: 2个Linear层，每个有weight和bias，所以4个参数
+        # 2个LayerNorm: 每个有gamma和beta，所以4个参数
+        # 总共: 4 + 4 + 4 = 12 个参数
+        self.assertEqual(len(params), 12)
 
 
 if __name__ == '__main__':
