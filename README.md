@@ -71,7 +71,9 @@
 │   ├── linear_regression.py        # 线性回归训练示例 (阶段1任务2)
 │   ├── mlp_classification.py       # MLP 分类训练示例 (阶段1任务3)
 │   ├── attention_example.py        # Attention 机制示例 (阶段2任务1)
-│   └── transformer_block_example.py # Transformer Block 示例 (阶段2任务2)
+│   ├── transformer_block_example.py # Transformer Block 示例 (阶段2任务2)
+│   └── visualization_demo.py       # 综合可视化演示
+├── output/              # 输出目录（可视化图表等）
 ├── requirements.txt     # 依赖包列表
 └── README.md            # 项目说明文件
 ```
