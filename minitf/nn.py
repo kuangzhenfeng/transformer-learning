@@ -342,7 +342,7 @@ class MultiHeadAttention(Module):
         # 重塑为 (batch_size, seq_len, num_heads, d_k)
         x = x.reshape(batch_size, seq_len, self.num_heads, self.d_k)
 
-        # 转置为 (batch_size, num_heads, seq_len, d_k)
+        # 转置为 (batch_size, num_heads, seq_len, d_k)，转置的作用：使多头注意力机制能够高效地并行处理多个注意力头
         x = x.transpose((0, 2, 1, 3))
 
         return x

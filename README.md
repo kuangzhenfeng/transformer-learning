@@ -126,6 +126,45 @@
 - 支持因果掩码和堆叠多层 Transformer Block
 - 通过全面的单元测试验证正确性（47个测试全部通过）
 
+
+## 阶段3完成情况
+
+### 任务1：使用 PyTorch 重写组件 ✅
+已完成 PyTorch 版本的核心模块：
+- MLP、Scaled Dot-Product Attention、Multi-Head Attention
+- Position-wise Feed-Forward、Transformer Block（Pre-LN）
+- 完整单元测试（tests/test_pytorch_nn.py），均已通过
+
+### 任务2：微型 GPT 实现与训练 ✅
+已实现并验证一个可训练的字符级微型 GPT：
+- 模型：GPT(Embedding + 多层 TransformerBlock + LayerNorm + LM Head)
+- 训练脚本：examples/train_gpt_char.py（内置小语料，支持 CPU/GPU）
+- 简单 Tokenizer：字符级 CharTokenizer；另提供 SimpleWordTokenizer（词级）
+- 采样生成：支持 temperature、top-k 采样
+- 单元测试：tests/test_pytorch_gpt.py，已通过
+
+### 如何运行（阶段3）
+
+- 运行 PyTorch 组件单测：
+
+```bash
+python -m unittest tests/test_pytorch_nn.py -v
+```
+
+- 运行 GPT 与 Tokenizer 单测：
+
+```bash
+python -m unittest tests/test_pytorch_gpt.py -v
+```
+
+- 训练并采样字符级 GPT：
+
+```bash
+python examples/train_gpt_char.py
+```
+
+如需在自定义文本上训练，可修改 train_gpt_char.py 中的 train(train_text=...) 参数，或在 main 中传入自定义字符串。
+
 ## 安装依赖
 
 ```bash
