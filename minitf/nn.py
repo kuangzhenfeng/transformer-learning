@@ -187,6 +187,7 @@ def cross_entropy_loss(logits: Tensor, targets: Union[Tensor, np.ndarray]) -> Te
 
     公式:
         loss = -mean(log(softmax(logits)[i, targets[i]]))
+        核心是借助了对数函数-log(x)的一个关键特性：当预测概率x接近1时，损失接近0；当 x稍微偏离1，损失会缓慢增加；但当x接近0时，损失会急剧增大至无穷大
     """
     batch_size = logits.data.shape[0]
     num_classes = logits.data.shape[1]
