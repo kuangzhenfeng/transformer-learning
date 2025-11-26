@@ -152,11 +152,9 @@ class Sequential(Module):
         return f"Sequential(\n  {layer_str}\n)"
 
 
-# 损失函数
-
 def softmax(x: Tensor, axis: int = -1) -> Tensor:
     """
-    Softmax 函数
+    Softmax 函数（Softmax是激活函数。不过，它通常与交叉熵损失函数结合使用）
     Softmax(x) = exp(x) / sum(exp(x))
     Softmax将向量 x 的每个元素映射到 [0, 1] 范围内，并使其和为 1。
 
@@ -173,6 +171,7 @@ def softmax(x: Tensor, axis: int = -1) -> Tensor:
     sum_exp = exp_x.sum(axis=axis, keepdims=True)
     return exp_x / sum_exp
 
+# 损失函数
 
 def cross_entropy_loss(logits: Tensor, targets: Union[Tensor, np.ndarray]) -> Tensor:
     """
