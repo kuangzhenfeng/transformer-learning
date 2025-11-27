@@ -23,6 +23,10 @@ class Tensor:
     def _unbroadcast(grad: np.ndarray, shape: Tuple[int, ...]) -> np.ndarray:
         """
         处理广播后的梯度，将其还原到原始形状
+        比如：张量 A 形状为 (1, 3)，张量 B 形状为 (4, 1)，则广播后的形状为 (4, 3)
+              在反向传播时，我们得到形状为 (4, 3) 的梯度，但需要还原为原始形状：
+              - A 的梯度应该是 (1, 3) 形状
+              - B 的梯度应该是 (4, 1) 形状
 
         Args:
             grad: 广播后的梯度
